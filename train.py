@@ -7,6 +7,11 @@ import torch
 # from torchsummary import summary
 from model import Model
 
+import matplotlib as mpl
+mpl.use('Agg')
+import matplotlib.pyplot as plt
+
+
 # 交差分割検証とattentionの可視化
 # 評価指標の実装: rank / nash
 # test/dev用のメソッドも修正する
@@ -58,7 +63,7 @@ def train_run(model, iterator, optimizer, criterion):
 
     for batch in iterator:
         optimizer.zero_grad()
-        output = model(batch.text) # batch.text: (sentence length, batch_size)
+        output, _ = model(batch.text) # batch.text: (sentence length, batch_size)
         label = batch_label_make(batch.value1, batch.value2, batch.value3) # label: (batch_size, output_dim)
         # print(f'{output.size()}, {label.size()}')
 
@@ -76,18 +81,49 @@ def eval_run(model, iterator, criterion):
     epoch_loss = 0
     epoch_acc = 0
     model.eval()
+    lc = 0
 
     with torch.no_grad():
         for batch in iterator:
-            predictions = model(batch.text)
+            predictions, _ = model(batch.text)
             label = batch_label_make(batch.value1, batch.value2, batch.value3) # label: (batch_size, output_dim)
             loss = criterion(predictions, label)
             acc = selection_accuracy(predictions, label)
 
             epoch_loss += loss.item()
             epoch_acc += acc.item()
+
+            if lc == 0:
+                attn_visualization(model, batch)
+                lc = lc + 1
     
     return epoch_loss / len(iterator), epoch_acc / len(iterator)
+
+def attn_visualization(model, batch):
+    with torch.no_grad():
+        _, attention = model(batch.text)
+        plt.matshow(attention.cpu().numpy()[0])
+        plt.savefig('attention.png')
+
+"""
+def showAttention(input_sentence, output_words, attentions):
+    # Set up figure with colorbar
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    cax = ax.matshow(attentions.numpy(), cmap='bone')
+    fig.colorbar(cax)
+
+    # Set up axes
+    ax.set_xticklabels([''] + input_sentence.split(' ') +
+                       ['<EOS>'], rotation=90)
+    ax.set_yticklabels([''] + input_sentence)
+
+    # Show label at every tick
+    ax.xaxis.set_major_locator(ticker.MultipleLocator(1))
+    ax.yaxis.set_major_locator(ticker.MultipleLocator(1))
+
+    plt.show()
+"""
 
 def batch_label_make(label1, label2, label3):
     return torch.cat([label1.unsqueeze(1), label2.unsqueeze(1), label3.unsqueeze(1)], dim=1)

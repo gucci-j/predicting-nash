@@ -63,9 +63,9 @@ class Model(nn.Module):
         hidden = self.dropout_hidden(torch.cat((hidden[-2,:,:], hidden[-1,:,:]), dim=1))
         # hidden: (batch_size, hidden_dim * 2)
 
-        rescaled_hidden, _ = self.attention(query=hidden, key=gru_output, value=gru_output)
+        rescaled_hidden, attention_weight = self.attention(query=hidden, key=gru_output, value=gru_output)
         dense = self.dense(rescaled_hidden)
         # dense: (batch_size, output_dim)
         output = self.softmax(dense)
 
-        return output
+        return output, attention_weight
