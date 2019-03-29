@@ -27,7 +27,7 @@ class Self_Attention(nn.Module):
         attention_output = torch.bmm(attention_weight, value) # (batch_size, 1, hidden_dim * 2)
         attention_output = attention_output.squeeze(1) # (batch_size, hidden_dim * 2)
 
-        return attention_output, attention_weight
+        return attention_output, attention_weight.squeeze(1)
 
 
 class Model(nn.Module):

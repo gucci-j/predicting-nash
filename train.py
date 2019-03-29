@@ -4,20 +4,14 @@ import torch.nn as nn
 import torch.optim as optim
 import torch
 
-# from torchsummary import summary
 from model import Model
 
 import matplotlib as mpl
 mpl.use('Agg')
 import matplotlib.pyplot as plt
-
-
-# 交差分割検証とattentionの可視化
-# 評価指標の実装: rank / nash
-# test/dev用のメソッドも修正する
-# init_hidden系の問題について考える
-# attentionのマスクをどうするか
-# early stoppingの導入
+import seaborn as sns
+import pandas as pd
+import numpy as np
 
 def train():
     # hyperparameters
@@ -53,6 +47,7 @@ def train():
     
     test_loss, test_acc = eval_run(model, test_iterator, criterion)
     print(f'| Test Loss: {test_loss:.3f} | Test Acc: {test_acc*100:.2f}% |')
+    attn_visualization(model, test_iterator, TEXT, multiple_flag=True)
     torch.save(model.state_dict(), PATH)
 
 
@@ -81,7 +76,6 @@ def eval_run(model, iterator, criterion):
     epoch_loss = 0
     epoch_acc = 0
     model.eval()
-    lc = 0
 
     with torch.no_grad():
         for batch in iterator:
@@ -92,45 +86,64 @@ def eval_run(model, iterator, criterion):
 
             epoch_loss += loss.item()
             epoch_acc += acc.item()
-
-            if lc == 0:
-                attn_visualization(model, batch)
-                lc = lc + 1
     
     return epoch_loss / len(iterator), epoch_acc / len(iterator)
 
-def attn_visualization(model, batch):
-    with torch.no_grad():
-        _, attention = model(batch.text)
-        plt.matshow(attention.cpu().numpy()[0])
-        plt.savefig('attention.png')
+def attn_visualization(model, iterator, TEXT, multiple_flag=False):
+    """
+    Visualize self-attention weights with input captions.
+    """
 
-"""
-def showAttention(input_sentence, output_words, attentions):
-    # Set up figure with colorbar
-    fig = plt.figure()
-    ax = fig.add_subplot(111)
-    cax = ax.matshow(attentions.numpy(), cmap='bone')
-    fig.colorbar(cax)
+    if multiple_flag is False:
+        with torch.no_grad():
+            batch = next(iter(iterator))
+            _, attention = model(batch.text)
 
-    # Set up axes
-    ax.set_xticklabels([''] + input_sentence.split(' ') +
-                       ['<EOS>'], rotation=90)
-    ax.set_yticklabels([''] + input_sentence)
+            # in torchtext, batch_size is placed in dim=1. dim=0 is used for sentence length
+            text = batch.text.transpose(0, 1)
+            # print(attention.size())
+            attention_weight = attention.cpu().numpy()
 
-    # Show label at every tick
-    ax.xaxis.set_major_locator(ticker.MultipleLocator(1))
-    ax.yaxis.set_major_locator(ticker.MultipleLocator(1))
+            itos = []
+            for text_element in text:
+                itos_element = []
+                for index in text_element:
+                    # print(f'{TEXT.vocab.itos[index]} ')
+                    itos_element.append(TEXT.vocab.itos[index])
+                itos.append(itos_element)
 
-    plt.show()
-"""
+            plt.figure(figsize = (16, 5))
+            sns.heatmap(attention_weight, annot=np.asarray(itos), fmt='', cmap='Blues')
+            plt.savefig('attention.png')
+
+    elif multiple_flag is not False:
+        with torch.no_grad():
+            batch_count = 0
+            for batch in iterator:
+                _, attention = model(batch.text)
+                text = batch.text.transpose(0, 1)
+                attention_weight = attention.cpu().numpy()
+                
+                itos = []
+                for text_element in text:
+                    itos_element = []
+                    for index in text_element:
+                        itos_element.append(TEXT.vocab.itos[index])
+                    itos.append(itos_element)
+                
+                fig_size = len(batch.text) + 1 # for changing fig_size dynamically
+                plt.figure(figsize = (fig_size, 7))
+                sns.heatmap(attention_weight, annot=np.asarray(itos), fmt='', cmap='Blues')
+                plt.savefig('./fig/attention_' + str(batch_count) + '.png')
+                plt.close()
+                batch_count += 1
 
 def batch_label_make(label1, label2, label3):
     return torch.cat([label1.unsqueeze(1), label2.unsqueeze(1), label3.unsqueeze(1)], dim=1)
 
 def selection_accuracy(preds, y):
     """
-    obtain the accuracy of the optimal essential issue prediction
+    Obtain the accuracy of the optimal essential issue prediction.
     """
 
     # get indices of each max value: preds and y
@@ -140,8 +153,6 @@ def selection_accuracy(preds, y):
     acc = correct / len(preds)
 
     return acc
-
-# 順位係数もここに用意する
 
 if __name__ == '__main__':
     train()
