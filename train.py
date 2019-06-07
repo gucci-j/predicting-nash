@@ -12,7 +12,6 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
 import numpy as np
-<<<<<<< HEAD
 
 # 交差分割検証
 # 評価指標の実装: rank / nash
@@ -20,8 +19,6 @@ import numpy as np
 # init_hidden系の問題について考える
 # attentionのマスクをどうするか
 # early stoppingの導入
-=======
->>>>>>> 7852db9b00ec69094fa19612ed6d1785fe3b2e6f
 
 def train():
     # hyperparameters
