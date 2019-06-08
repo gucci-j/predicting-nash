@@ -12,13 +12,9 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
 import numpy as np
+from scipy.stats import spearmanr
 
-# 交差分割検証
-# 評価指標の実装: rank / nash
-# test/dev用のメソッドも修正する
-# init_hidden系の問題について考える
-# attentionのマスクをどうするか
-# early stoppingの導入
+# 交差分割検証用の導入
 
 def train():
     # hyperparameters
@@ -49,11 +45,11 @@ def train():
 
     for epoch in range(N_EPOCHS):
         train_loss, train_acc  = train_run(model, train_iterator, optimizer, criterion)
-        valid_loss, valid_acc = eval_run(model, valid_iterator, criterion)
-        print(f'| Epoch: {epoch+1:02} | Train Loss: {train_loss:.3f} | Train Acc: {train_acc*100:.2f}% | Val. Loss: {valid_loss:.3f} | Val. Acc: {valid_acc*100:.2f}% |')
+        valid_loss, valid_acc, val_cor = eval_run(model, valid_iterator, criterion)
+        print(f'| Epoch: {epoch+1:02} | Train Loss: {train_loss:.3f} | Train Acc: {train_acc*100:.2f}% | Val. Loss: {valid_loss:.3f} | Val. Acc: {valid_acc*100:.2f} | Val. Cor: {val_cor:.3f}% |')
     
-    test_loss, test_acc = eval_run(model, test_iterator, criterion)
-    print(f'| Test Loss: {test_loss:.3f} | Test Acc: {test_acc*100:.2f}% |')
+    test_loss, test_acc, test_cor = eval_run(model, test_iterator, criterion)
+    print(f'| Test Loss: {test_loss:.3f} | Test Acc: {test_acc*100:.2f} | Test Cor: {test_cor:.3f}% |')
     attn_visualization(model, test_iterator, TEXT, multiple_flag=True)
     torch.save(model.state_dict(), PATH)
 
@@ -82,6 +78,7 @@ def train_run(model, iterator, optimizer, criterion):
 def eval_run(model, iterator, criterion):
     epoch_loss = 0
     epoch_acc = 0
+    epoch_cor = 0
     model.eval()
 
     with torch.no_grad():
@@ -90,11 +87,13 @@ def eval_run(model, iterator, criterion):
             label = batch_label_make(batch.value1, batch.value2, batch.value3) # label: (batch_size, output_dim)
             loss = criterion(predictions, label)
             acc = selection_accuracy(predictions, label)
+            cor = spearman_correlation(predictions, label)
 
             epoch_loss += loss.item()
             epoch_acc += acc.item()
+            epoch_cor += cor.item()
     
-    return epoch_loss / len(iterator), epoch_acc / len(iterator)
+    return epoch_loss / len(iterator), epoch_acc / len(iterator), epoch_cor / len(iterator)
 
 def attn_visualization(model, iterator, TEXT, multiple_flag=False):
     """
@@ -160,6 +159,25 @@ def selection_accuracy(preds, y):
     acc = correct / len(preds)
 
     return acc
+
+#
+# 順位相関をここで見る
+# 参考: https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.spearmanr.html
+#
+def spearman_correlation(preds, y):
+    spearmanr_list = []
+    _preds = preds.cpu().numpy()
+    _y = y.cpu().numpy()
+    for index, pred in enumerate(_preds):
+        if _y[index][0] == _y[index][1] == _y[index][2]:
+            # print(f'{_y[index][:3]},  {pred[:3]}')
+            continue
+        else:
+            spearmanr_element = spearmanr(_y[index][:3], pred[:3]).correlation
+            if not np.isnan(spearmanr_element):
+                spearmanr_list.append(spearmanr_element)
+    cor = sum(spearmanr_list) / len(spearmanr_list)
+    return cor
 
 if __name__ == '__main__':
     train()
