@@ -1,8 +1,9 @@
-from load_data import load_data
+from load_data import load_data, load_data_cv
 
 import torch.nn as nn
 import torch.optim as optim
 import torch
+from torchtext import data
 
 from model import Model
 
@@ -14,7 +15,90 @@ import pandas as pd
 import numpy as np
 from scipy.stats import spearmanr
 
-# 交差分割検証用の導入
+import sys
+from pathlib import Path
+import json
+
+#
+# Loading Arguments
+#
+if len(sys.argv) <= 1:
+    raise Exception('Please give json settings file path!')
+args_p = Path(sys.argv[1])
+if args_p.exists() is False:
+    raise Exception('Path not found. Please check an argument again!')
+
+with args_p.open(mode='r') as f:
+    true = True
+    false = False
+    null = None
+    args = json.load(f)
+
+
+#
+# Logging
+# Reference: https://qiita.com/knknkn1162/items/87b1153c212b27bd52b4
+#
+import datetime
+run_start_time = datetime.datetime.today().strftime('%Y-%m-%d_%H-%M-%S')
+
+import logging
+logfile = str('log/log-{}.txt'.format(run_start_time))
+logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
+                    datefmt='%m/%d/%Y %H:%M:%S',
+                    level=logging.INFO,
+                    handlers=[
+                        logging.FileHandler(logfile),
+                        logging.StreamHandler(sys.stdout)
+                    ])
+logger = logging.getLogger(__name__)
+
+# for cross valiadtion
+def train_cv():
+    # hyperparameters
+    BATCH_SIZE = 32
+    EMBEDDING_DIM = 300
+    HIDDEN_DIM = 256
+    OUTPUT_DIM = 3
+    NUM_LAYERS = 3
+    INPUT_DROPOUT = 0.2
+    HIDDEN_DROPOUT = 0.5
+    N_EPOCHS = 20
+
+    _history = []
+
+    for TEXT, train_data, val_data in load_data_cv():
+        TEXT.build_vocab(train_data, vectors="glove.6B.300d", min_freq=2)
+        INPUT_DIM = len(TEXT.vocab)
+        logger.info(f'Embedding size: {TEXT.vocab.vectors.size()}.')
+
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        train_iterator = data.Iterator(train_data, batch_size=BATCH_SIZE, sort_key=lambda x: len(x.text), device=device)
+        val_iterator = data.Iterator(val_data, batch_size=BATCH_SIZE, sort_key=lambda x: len(x.text), device=device)
+
+        model = Model(INPUT_DIM, EMBEDDING_DIM, HIDDEN_DIM, OUTPUT_DIM, NUM_LAYERS, 
+                INPUT_DROPOUT, HIDDEN_DROPOUT, TEXT)
+        optimizer = optim.RMSprop(model.parameters(), lr=0.001, alpha=0.9, eps=1e-07)
+        criterion = nn.MSELoss()
+
+        # for a gpu environment
+        model = model.to(device)
+        criterion = criterion.to(device)
+
+        for epoch in range(N_EPOCHS):
+            train_loss, train_acc  = train_run(model, train_iterator, optimizer, criterion)
+            logger.info(f'| Epoch: {epoch+1:02} | Train Loss: {train_loss:.3f} | Train Acc: {train_acc*100:.2f}%')
+        
+        val_loss, val_acc, val_cor = eval_run(model, val_iterator, criterion)
+        logger.info(f'| Val Loss: {val_loss:.3f} | Val Acc: {val_acc*100:.2f} | Val Cor: {val_cor:.3f}% |')
+        _history.append([val_loss, val_acc, val_cor])
+    
+    _history = np.asarray(_history)
+    loss = np.mean(_history[:, 0])
+    acc = np.mean(_history[:, 1])
+    cor = np.mean(_history[:, 2])
+    
+    logger.info(f'LOSS: {loss}, ACC: {acc}, COR: {cor}')
 
 def train():
     # hyperparameters
@@ -180,4 +264,7 @@ def spearman_correlation(preds, y):
     return cor
 
 if __name__ == '__main__':
-    train()
+    if args['cv'] is True:
+        train_cv()
+    else:
+        train()

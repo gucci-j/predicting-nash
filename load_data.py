@@ -7,6 +7,32 @@ from pathlib import Path
 from load_negotiation import load_negotiation
 from model import Model
 
+import pandas as pd
+from sklearn.model_selection import KFold
+import numpy as np
+
+def load_data_cv(batch_size=16):
+    TEXT = data.Field(sequential=True)
+    LABEL = data.Field(sequential=False, use_vocab=False, dtype=torch.float)
+    fields = [('text', TEXT), ('value1', LABEL), ('value2', LABEL), ('value3', LABEL)]
+
+    _data = data.TabularDataset(
+        path='./all.csv',
+        format='csv',
+        skip_header=True,
+        fields=fields)
+    
+    kf = KFold(n_splits=10, random_state=1234)
+    data_arr = np.array(_data.examples)
+
+    for train_index, val_index in kf.split(data_arr):
+        yield(
+            TEXT,
+            data.Dataset(data_arr[train_index], fields),
+            data.Dataset(data_arr[val_index], fields),
+        )
+
+
 def load_data(batch_size=16, path='data/negotiate'):
     r_path = Path(path)
     for child_name in ['train.txt', 'test.txt', 'val.txt']:
@@ -53,4 +79,5 @@ def load_data(batch_size=16, path='data/negotiate'):
     return TEXT, LABEL, train_iter, val_iter, test_iter
 
 if __name__ == '__main__':
-    load_data()
+    # load_data()
+    load_data_cv()
